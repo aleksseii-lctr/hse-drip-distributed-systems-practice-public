@@ -1,4 +1,4 @@
-package ru.hse.drip.systems.distributed.seminar.i3.classwork.balancer;
+package ru.hse.drip.systems.distributed.seminar.i3.balancer;
 
 import java.io.IOException;
 import java.io.InputStream;

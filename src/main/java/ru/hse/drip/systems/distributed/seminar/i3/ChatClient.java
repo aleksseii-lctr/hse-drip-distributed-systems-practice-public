@@ -1,4 +1,4 @@
-package ru.hse.drip.systems.distributed.seminar.i3.classwork;
+package ru.hse.drip.systems.distributed.seminar.i3;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;

@@ -1,4 +1,4 @@
-package ru.hse.drip.systems.distributed.seminar.i3.classwork.node;
+package ru.hse.drip.systems.distributed.seminar.i3.node;
 
 import java.io.IOException;
 

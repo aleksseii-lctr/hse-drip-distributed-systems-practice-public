@@ -1,6 +1,4 @@
-package ru.hse.drip.systems.distributed.seminar.i3.classwork.node;
-
-import ru.hse.drip.systems.distributed.seminar.i3.classwork.ClientHandler;
+package ru.hse.drip.systems.distributed.seminar.i3;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -10,14 +8,16 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class BaseChatServers {
+public class ChatServer {
+
+    private static final int SERVER_PORT = 1337;
 
     private static List<ClientHandler> clients = new ArrayList<>();
     private static ExecutorService EXECUTOR = Executors.newFixedThreadPool(4);
 
-    public static void startServer(int port) throws IOException {
-        System.out.println("started server on port " + port);
-        ServerSocket serverSocket = new ServerSocket(port);
+    public static void main(String[] args) throws IOException {
+        System.out.println("started server on port " + SERVER_PORT);
+        ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
 
         while (true) {
             Socket clientSocket = serverSocket.accept();
@@ -29,4 +29,5 @@ public class BaseChatServers {
         }
 
     }
+
 }
