@@ -54,7 +54,9 @@ public class ConsistentHashRing {
      * @param nodeId UUID узла
      */
     public void addNode(UUID nodeId) {
-
+        long hash = hash(nodeId.toString());
+        ring.put(hash, nodeId);
+        nodeHashMap.put(nodeId, hash);
         System.out.println("✅ Узел '" + nodeId + "' добавлен на позицию ");
     }
 
@@ -64,7 +66,9 @@ public class ConsistentHashRing {
      * @param nodeId UUID узла для удаления
      */
     public void removeNode(UUID nodeId) {
-
+        long hash = nodeHashMap.get(nodeId);
+        ring.remove(hash);
+        nodeHashMap.remove(nodeId);
         System.out.println("❌ Узел '" + nodeId + "' удален");
     }
 
@@ -75,9 +79,13 @@ public class ConsistentHashRing {
      * @return UUID узла, ответственного за этот ключ, или null если нет доступных узлов
      */
     public UUID getNode(String key) {
+        long keyHash = hash(key);
+        Map.Entry<Long, UUID> nodeDataFrom = ring.ceilingEntry(keyHash);
 
-
-        return UUID.randomUUID();
+        if  (nodeDataFrom == null) {
+            return ring.firstEntry().getValue();
+        }
+        return nodeDataFrom.getValue();
     }
 
     /**

@@ -17,15 +17,15 @@ public class ShardNode {
     }
 
     public void put(String key, String value) {
-
+        dataStore.put(key, value);
     }
 
     public String get(String key) {
-        return "";
+        return dataStore.get(key);
     }
 
     public boolean containsKey(String key) {
-        return true;
+        return dataStore.containsKey(key);
     }
 
     public int getKeyCount() {

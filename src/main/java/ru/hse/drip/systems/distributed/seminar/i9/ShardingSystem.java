@@ -21,8 +21,10 @@ public class ShardingSystem {
      * @return UUID созданного узла
      */
     public UUID addNode() {
-
-        return UUID.randomUUID();
+        var uuid = UUID.randomUUID();
+        hashRing.addNode(uuid);
+        nodes.put(uuid, new ShardNode(uuid));
+        return uuid;
     }
 
     /**
@@ -31,20 +33,43 @@ public class ShardingSystem {
      * @param nodeId UUID узла для удаления
      */
     public void removeNode(UUID nodeId) {
-
+        if (!nodes.containsKey(nodeId)) {
+            System.out.println("not found node with id " + nodeId);
+            return;
+        }
+        hashRing.removeNode(nodeId);
+        nodes.remove(nodeId);
     }
 
     public void put(String key, String value) {
         // Определяем узел, ответственный за данный ключ через consistent hashing
+        UUID nodeUuid = hashRing.getNode(key);
+        if (nodeUuid == null) {
+            System.out.println("not found any free node for key " + key);
+        }
 
-
+        var node  = nodes.get(nodeUuid);
+        node.put(key, value);
         System.out.println("✅ Ключ '" + key + "' → узел '" + "" + "' | значение: '" + value + "'");
     }
 
     public String get(String key) {
         // Определяем узел через consistent hashing - тот же алгоритм, что и при put
+        // Определяем узел, ответственный за данный ключ через consistent hashing
+        UUID nodeUuid = hashRing.getNode(key);
+        if (nodeUuid == null) {
+            System.out.printf("not found any free node for key " + key + "\n");
+            return null;
+        }
 
-        return "";
+        ShardNode shardNode = nodes.get(nodeUuid);
+        String value = shardNode.get(key);
+        if (value != null) {
+            System.out.println("✅ Найдено в узле '" + nodeUuid + "': " + value);
+        } else {
+            System.out.println("❌ Ключ '" + key + "' не найден в узле '" + nodeUuid + "'");
+        }
+        return value;
     }
 
     public void printStatistics() {
