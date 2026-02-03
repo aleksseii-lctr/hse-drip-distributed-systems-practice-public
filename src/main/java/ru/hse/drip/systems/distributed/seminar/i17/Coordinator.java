@@ -48,13 +48,46 @@ public class Coordinator {
         // - Keep Map<String, Vote> votes
         // - For each participant, call net.rpcPrepare(id, pId, txId, op) with retries
         // - Decide COMMIT only if all votes are COMMIT
+        Map<String, Vote> votes = new LinkedHashMap<>();
+        boolean shouldAbort = false;
 
-        throw new UnsupportedOperationException("TODO: implement Coordinator.run()");
+        for (Map.Entry<String, String> entry : plan.participantOps().entrySet()) {
+            String participant = entry.getKey();
+            String op = entry.getValue();
+            Vote vote = requestPrepareWithRetries(txId, participant, op);
+            votes.put(participant, vote);
+            if (vote == Vote.ABORT) {
+                shouldAbort = true;
+            }
+        }
+
+        Decision decision = shouldAbort ? Decision.ABORT : Decision.COMMIT;
+        logDecision(txId, decision);
+
+        // phase 2
+        if (decision == Decision.ABORT) {
+            broadcastAbortWithRetries(txId, plan);
+        } else {
+            broadcastCommitWithRetries(txId, plan);
+        }
+        return decision;
     }
 
     public void recoverAndFinish() throws IOException {
         // TODO: parse log and re-broadcast decisions
-        throw new UnsupportedOperationException("TODO: implement Coordinator.recoverAndFinish()");
+
+        CoordinatorRecovery recovery = CoordinatorRecovery.fromLog(log);
+        for (var meta : recovery.txs().values()) {
+            if (meta.decision != null) {
+                continue;
+            }
+
+            TxId txId = TxId.of(meta.txId);
+            logDecision(txId, Decision.ABORT);
+            broadcastAbortWithRetries(txId, meta.plan);
+
+            run(meta.plan);
+        }
     }
 
     // ---- helpers you will likely need ----
