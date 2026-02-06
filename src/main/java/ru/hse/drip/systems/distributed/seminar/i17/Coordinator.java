@@ -39,6 +39,54 @@ public class Coordinator {
         return id;
     }
 
+    /**
+     * Восстановление координатора 2PC после рестарта.
+     *
+     * Задача метода:
+     *  - прочитать WAL координатора (лог, куда мы пишем BEGIN и DECISION),
+     *  - найти транзакции, по которым решение (COMMIT/ABORT) уже было
+     *    надежно (durably) записано в лог,
+     *  - и повторно "дослать" это решение всем участникам.
+     *
+     * Зачем это нужно:
+     *  - сеть ненадёжна (loss/partition/crash), поэтому COMMIT/ABORT может не дойти
+     *    до части участников;
+     *  - участники могут зависнуть в состоянии PREPARED (in doubt) и держать ресурсы,
+     *    пока не узнают итоговое решение;
+     *  - после рестарта координатор обязан уметь довести такие транзакции до конца.
+     *
+     * ВАЖНО:
+     *  - Этот метод НЕ запускает новую транзакцию.
+     *    Новая транзакция генерирует новый txId и фактически
+     *    повторяет бизнес-операцию (например, перевод денег), что может привести
+     *    к двойным эффектам.
+     *
+     * Про транзакции без решения (DECISION отсутствует в логе):
+     *  - это означает, что координатор упал ДО того, как записал DECISION на диск;
+     *  - мы не можем "восстановить" корректное решение (мы его просто не знаем);
+     *  - в реальных системах обычно выбирают политику "safe abort",
+     *    чтобы разморозить участников и освободить ресурсы.
+     */
+    public void recoverAndFinish() throws IOException {
+        // TODO: parse log and re-broadcast decisions
+
+
+        // TODO: rewrite logic with students
+
+        CoordinatorRecovery recovery = CoordinatorRecovery.fromLog(log);
+        for (var meta : recovery.txs().values()) {
+            if (meta.decision != null) {
+                continue;
+            }
+
+            TxId txId = TxId.of(meta.txId);
+            logDecision(txId, Decision.ABORT);
+            broadcastAbortWithRetries(txId, meta.plan);
+
+            run(meta.plan);
+        }
+    }
+
     public Decision run(TxPlan plan) throws IOException {
         TxId txId = TxId.newId();
         logBegin(txId, plan);
@@ -71,23 +119,6 @@ public class Coordinator {
             broadcastCommitWithRetries(txId, plan);
         }
         return decision;
-    }
-
-    public void recoverAndFinish() throws IOException {
-        // TODO: parse log and re-broadcast decisions
-
-        CoordinatorRecovery recovery = CoordinatorRecovery.fromLog(log);
-        for (var meta : recovery.txs().values()) {
-            if (meta.decision != null) {
-                continue;
-            }
-
-            TxId txId = TxId.of(meta.txId);
-            logDecision(txId, Decision.ABORT);
-            broadcastAbortWithRetries(txId, meta.plan);
-
-            run(meta.plan);
-        }
     }
 
     // ---- helpers you will likely need ----
