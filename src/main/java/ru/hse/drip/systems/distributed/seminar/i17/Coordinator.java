@@ -68,22 +68,24 @@ public class Coordinator {
      *    чтобы разморозить участников и освободить ресурсы.
      */
     public void recoverAndFinish() throws IOException {
-        // TODO: parse log and re-broadcast decisions
-
-
-        // TODO: rewrite logic with students
-
         CoordinatorRecovery recovery = CoordinatorRecovery.fromLog(log);
         for (var meta : recovery.txs().values()) {
-            if (meta.decision != null) {
+            if (meta.plan == null) {
                 continue;
             }
 
-            TxId txId = TxId.of(meta.txId);
-            logDecision(txId, Decision.ABORT);
-            broadcastAbortWithRetries(txId, meta.plan);
+            var txId = TxId.of(meta.txId);
+            if (meta.decision == null) {
+                logDecision(txId, Decision.ABORT);
+                broadcastAbortWithRetries(txId, meta.plan);
+                continue;
+            }
 
-            run(meta.plan);
+            if (meta.decision == Decision.ABORT) {
+                broadcastAbortWithRetries(txId, meta.plan);
+            } else {
+                broadcastCommitWithRetries(txId, meta.plan);
+            }
         }
     }
 

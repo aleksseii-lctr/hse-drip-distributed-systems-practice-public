@@ -22,7 +22,7 @@ import java.util.Map;
  * - onAbort(txId):
  *   - If already ABORTED -> return.
  *   - If PREPARED -> shard.abort(txId, op), log "txId|ABORTED|".
-
+ * <p>
  * Recovery:
  * - Constructor should call recoverFromLog():
  *   - replay PREPARED (restore state and call shard.recoverPrepared(txId, op))
@@ -42,8 +42,7 @@ public class ParticipantServer {
         this.id = id;
         this.shard = shard;
         this.log = log;
-        // TODO: implement
-        // recoverFromLog();
+        recoverFromLog();
     }
 
     public String id() {
@@ -64,20 +63,63 @@ public class ParticipantServer {
 
     public synchronized Vote onPrepare(TxId txId, String operation) throws IOException {
         ensureAlive();
-        // TODO: implement participant prepare logic + WAL
-        throw new UnsupportedOperationException("TODO: implement ParticipantServer.onPrepare()");
+        TxRecord existingRecord = records.get(txId.value());
+        if (existingRecord != null) {
+            switch (existingRecord.state) {
+                case PREPARED, COMMITTED:
+                    return Vote.COMMIT;
+                case ABORTED:
+                    return Vote.ABORT;
+                default:
+                    break;
+            }
+        }
+
+        Vote prepareVote = shard.prepare(txId, operation);
+        if (prepareVote == Vote.COMMIT) {
+            append(String.format("%s|PREPARED|%s", txId.value(), escape(operation)));
+            records.put(txId.value(), new TxRecord(ParticipantState.PREPARED, operation));
+        } else if (prepareVote == Vote.ABORT) {
+            append(String.format("%s|VOTE_ABORT|%s", txId.value(), escape(operation)));
+            records.put(txId.value(), new TxRecord(ParticipantState.ABORTED, operation));
+        }
+        return prepareVote;
     }
 
     public synchronized void onCommit(TxId txId) throws IOException {
         ensureAlive();
-        // TODO: implement commit (idempotent) + WAL
-        throw new UnsupportedOperationException("TODO: implement ParticipantServer.onCommit()");
+
+        TxRecord existingRecord = records.get(txId.value());
+        if (existingRecord == null) {
+            throw new RuntimeException("commit on event w/o prepare: " + txId.value());
+        }
+        var state = existingRecord.state;
+        if (state != ParticipantState.PREPARED) {
+            return;
+        }
+
+        shard.commit(txId, existingRecord.operation);
+        append(String.format("%s|COMMITED|%s", txId.value(), escape(existingRecord.operation)));
+        records.put(txId.value(), new TxRecord(ParticipantState.COMMITTED, existingRecord.operation));
     }
 
     public synchronized void onAbort(TxId txId) throws IOException {
         ensureAlive();
-        // TODO: implement abort (idempotent) + WAL
-        throw new UnsupportedOperationException("TODO: implement ParticipantServer.onAbort()");
+
+        TxRecord existingRecord = records.get(txId.value());
+        if (existingRecord == null) {
+            return;
+        }
+        if (existingRecord.state == ParticipantState.ABORTED) {
+            return;
+        }
+        if (existingRecord.state == ParticipantState.COMMITTED) {
+            throw new RuntimeException("abort on commited tx: " + txId.value());
+        }
+
+        shard.abort(txId, existingRecord.operation);
+        append(String.format("%s|ABORTED|%s", txId.value(), escape(existingRecord.operation)));
+        records.put(txId.value(), new TxRecord(ParticipantState.ABORTED, existingRecord.operation));
     }
 
     public synchronized ParticipantState stateOf(TxId txId) {
@@ -88,10 +130,38 @@ public class ParticipantServer {
     // ---- recovery & helpers ----
 
     private void recoverFromLog() throws IOException {
-        // TODO: parse log lines and rebuild records + shard reservations
         List<String> lines = log.readAll();
-        // hint: same parsing as in solution: split("\\|", 3)
-        throw new UnsupportedOperationException("TODO: implement ParticipantServer.recoverFromLog()");
+        for (String line : lines) {
+            String[] parts = line.split("\\|", 3);
+            if (parts.length < 2) continue;
+            String tx = parts[0];
+            String event = parts[1];
+            String payload = parts.length == 3 ? unescape(parts[2]) : "";
+
+            switch (event) {
+                case "PREPARED":
+                    records.put(tx, new TxRecord(ParticipantState.PREPARED, payload));
+                    // rebuild reservation
+                    shard.recoverPrepared(TxId.of(tx), payload);
+                    break;
+                case "COMMITTED":
+                    // commit might have already applied before crash; for simplicity, assume it did.
+                    TxRecord prev = records.get(tx);
+                    String op = prev != null ? prev.operation : "";
+                    records.put(tx, new TxRecord(ParticipantState.COMMITTED, op));
+                    break;
+                case "ABORTED":
+                    TxRecord prev2 = records.get(tx);
+                    String op2 = prev2 != null ? prev2.operation : "";
+                    records.put(tx, new TxRecord(ParticipantState.ABORTED, op2));
+                    break;
+                case "VOTE_ABORT":
+                    records.put(tx, new TxRecord(ParticipantState.ABORTED, payload));
+                    break;
+                default:
+                    throw new RuntimeException("unknown event " + event);
+            }
+        }
     }
 
     private void append(String record) throws IOException {
